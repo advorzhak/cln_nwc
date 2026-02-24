@@ -2,3 +2,5 @@ pyln_client
 coincurve
 cryptography
 websockets
+pytest
+pytest-asyncio

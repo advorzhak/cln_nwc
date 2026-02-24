@@ -1,27 +1,34 @@
+from __future__ import annotations
+
 import json
 import time
 import uuid
-from enum import Enum
 from dataclasses import dataclass
-from urllib.parse import urlparse, parse_qs
-from pyln.client import RpcError, Millisatoshi
+from enum import Enum
+from typing import List, Optional
+from urllib.parse import parse_qs, urlparse
+
 from coincurve import PublicKey
+from pyln.client import Millisatoshi, RpcError
+
+from utilities.rpc_plugin import plugin
+
+from . import nip04
 from .event import Event
 from .utils import get_hex_pubkey
-from . import nip04
-from utilities.rpc_plugin import plugin
 
 
 @dataclass
 class URIOptions:
     """defines options for creating a new NWC instance"""
-    relay_url: str = None
-    secret: str = None
-    wallet_pubkey: str = None
-    nostr_wallet_connect_url: str = None
-    expiry_unix: int = None
-    budget_msat: Millisatoshi = None
-    spent_msat: Millisatoshi = None
+
+    relay_url: Optional[str] = None
+    secret: Optional[str] = None
+    wallet_pubkey: Optional[str] = None
+    nostr_wallet_connect_url: Optional[str] = None
+    expiry_unix: Optional[int] = None
+    budget_msat: Optional[Millisatoshi] = None
+    spent_msat: Optional[Millisatoshi] = None
 
 
 ISSUED_URI_BASE_KEY = ["nwc", "uri"]
@@ -29,6 +36,7 @@ ISSUED_URI_BASE_KEY = ["nwc", "uri"]
 
 class NIP47URI:
     """handle nostr wallet connects"""
+
     @staticmethod
     def parse_wallet_connect_url(url: str):
         parsed = urlparse(url=url)
@@ -47,8 +55,8 @@ class NIP47URI:
 
         connection_key = ISSUED_URI_BASE_KEY.copy()
         connection_key.append(pubkey)
-        connection_record = plugin.rpc.listdatastore(
-            key=connection_key)["datastore"]  # TODO: error handling
+        result = plugin.rpc.listdatastore(key=connection_key)
+        connection_record = result["datastore"]  # TODO: error handling
         if connection_record:
             connection_data = json.loads(connection_record[0].get("string"))
 
@@ -56,15 +64,17 @@ class NIP47URI:
             spent_msat = connection_data.get("spent_msat")
             expiry_unix = connection_data.get("expiry_unix", None)
 
-            return NIP47URI(options=URIOptions(
-                secret=connection_data.get("secret"),
-                budget_msat=Millisatoshi(budget_msat) if budget_msat else None,
-                spent_msat=Millisatoshi(spent_msat),
-                expiry_unix=expiry_unix,
-                # TODO: figure out how to not have to pass relay and wallet pubkey for this
-                relay_url="wss://relay.getalby.com/v1",
-                wallet_pubkey="placeholder"
-            ))
+            return NIP47URI(
+                options=URIOptions(
+                    secret=connection_data.get("secret"),
+                    budget_msat=Millisatoshi(budget_msat) if budget_msat else None,
+                    spent_msat=Millisatoshi(spent_msat),
+                    expiry_unix=expiry_unix,
+                    # TODO: avoid passing relay and wallet pubkey implicitly
+                    relay_url="wss://relay.getalby.com/v1",
+                    wallet_pubkey="placeholder",
+                )
+            )
         return None
 
     @staticmethod
@@ -76,7 +86,7 @@ class NIP47URI:
         if not records:
             return []
 
-        connections: list[NIP47URI] = []
+        connections: List[NIP47URI] = []
 
         for record in records:
             connection_data = json.loads(record.get("string"))
@@ -84,14 +94,16 @@ class NIP47URI:
             spent_msat = connection_data.get("spent_msat")
             expiry_unix = connection_data.get("expiry_unix", None)
 
-            connection = NIP47URI(options=URIOptions(
-                secret=connection_data.get("secret"),
-                budget_msat=Millisatoshi(budget_msat) if budget_msat else None,
-                spent_msat=Millisatoshi(spent_msat),
-                expiry_unix=expiry_unix,
-                relay_url="wss://relay.getalby.com/v1",
-                wallet_pubkey="placeholder"
-            ))
+            connection = NIP47URI(
+                options=URIOptions(
+                    secret=connection_data.get("secret"),
+                    budget_msat=Millisatoshi(budget_msat) if budget_msat else None,
+                    spent_msat=Millisatoshi(spent_msat),
+                    expiry_unix=expiry_unix,
+                    relay_url="wss://relay.getalby.com/v1",
+                    wallet_pubkey="placeholder",
+                )
+            )
             connections.append(connection)
 
         return connections
@@ -109,7 +121,9 @@ class NIP47URI:
         if not options.wallet_pubkey:
             raise ValueError("wallet pubkey is required")
 
-        return f'nostr+walletconnect://{options.wallet_pubkey}?relay={options.relay_url}&secret={options.secret}'
+        url = "nostr+walletconnect://" + f"{options.wallet_pubkey}"
+        url += f"?relay={options.relay_url}&secret={options.secret}"
+        return url
 
     def __init__(self, options: URIOptions):
         self.url = options.nostr_wallet_connect_url
@@ -120,8 +134,9 @@ class NIP47URI:
 
         self.relay_url = options.relay_url
         self.secret = options.secret
-        self.pubkey = PublicKey.from_secret(
-            bytes.fromhex(self.secret)).format().hex()[2:]
+        self.pubkey = (
+            PublicKey.from_secret(bytes.fromhex(self.secret)).format().hex()[2:]
+        )
         self.wallet_pubkey = options.wallet_pubkey
         self.expiry_unix = options.expiry_unix or None
         self.budget_msat = options.budget_msat or None
@@ -136,8 +151,7 @@ class NIP47URI:
 
     @property
     def remaining_budget(self):
-        total_budget = Millisatoshi(
-            self.budget_msat)
+        total_budget = Millisatoshi(self.budget_msat)
         spent = Millisatoshi(self.spent_msat)
         return total_budget - spent
 
@@ -154,31 +168,29 @@ class NIP47URI:
         try:
             plugin.rpc.deldatastore(key=self.datastore_key)
         except RpcError as e:
-            plugin.log(f"ERROR: {e}", 'error')
+            plugin.log(f"ERROR: {e}", "error")
             raise e
 
 
 class NIP47Response(Event):
-    def __init__(self, content: str, nip04_pubkey,
-                 referenced_event_id: str, privkey: str):
+    def __init__(
+        self, content: str, nip04_pubkey, referenced_event_id: str, privkey: str
+    ):
         # encrypt response payload
         encrypted_content = nip04.encrypt(
-            secret_key=privkey,
-            pubkey_hex=nip04_pubkey,
-            data=content
+            secret_key=privkey, pubkey_hex=nip04_pubkey, data=content
         )
 
         event_pubkey = get_hex_pubkey(privkey=privkey)
-        p_tag = ['p', nip04_pubkey]
-        e_tag = ['e', referenced_event_id]
+        p_tag = ["p", nip04_pubkey]
+        e_tag = ["e", referenced_event_id]
         # create kind 23195 (nwc response) event with encrypted payload
         super().__init__(
             content=encrypted_content,
             pubkey=event_pubkey,
-            tags=[
-                p_tag,
-                e_tag],
-            kind=23195)
+            tags=[p_tag, e_tag],
+            kind=23195,
+        )
 
         self._privkey = privkey  # QUESTION: bad idea to set the priv key on the class?
 
@@ -239,42 +251,24 @@ class NotImplementedError(NWCError):
 
 class NIP47RequestHandler:
     method_params_schema = {
-        "pay_invoice": {
-            "required": ["invoice"],
-            "optional": ["amount"]
-        },
-        "multi_pay_invoice": {
-            "required": ["invoices"],
-            "optional": []
-        },
+        "pay_invoice": {"required": ["invoice"], "optional": ["amount"]},
+        "multi_pay_invoice": {"required": ["invoices"], "optional": []},
         "pay_keysend": {
             "required": ["amount", "pubkey"],
-            "optional": ["preimage", "tlv_records"]
+            "optional": ["preimage", "tlv_records"],
         },
-        "multi_pay_keysend": {
-            "required": ["keysends"],
-            "optional": []
-        },
+        "multi_pay_keysend": {"required": ["keysends"], "optional": []},
         "make_invoice": {
             "required": ["amount"],
-            "optional": ["description", "expiry", "description_hash"]
+            "optional": ["description", "expiry", "description_hash"],
         },
-        "lookup_invoice": {
-            "required": [],
-            "optional": ["payment_hash", "invoice"]
-        },
+        "lookup_invoice": {"required": [], "optional": ["payment_hash", "invoice"]},
         "list_transactions": {
             "required": [],
-            "optional": ["limit", "offset", "from", "until", "unpaid", "type"]
+            "optional": ["limit", "offset", "from", "until", "unpaid", "type"],
         },
-        "get_balance": {
-            "required": [],
-            "optional": []
-        },
-        "get_info": {
-            "required": [],
-            "optional": []
-        }
+        "get_balance": {"required": [], "optional": []},
+        "get_info": {"required": [], "optional": []},
     }
 
     @property
@@ -325,7 +319,7 @@ class NIP47RequestHandler:
             "network": node_info.get("network"),
             "block_height": node_info.get("blockheight"),
             "block_hash": None,
-            "methods": list(self._method_handlers.keys())
+            "methods": list(self._method_handlers.keys()),
         }
 
     def handle_pay_result(self, pay_result):
@@ -336,29 +330,29 @@ class NIP47RequestHandler:
         amount_sent_msat = pay_result.get("amount_sent_msat")
         self.add_to_spent(amount_sent_msat)
 
-        return {
-            "preimage": preimage
-        }
+        return {"preimage": preimage}
 
     async def _pay_invoice(self, params):
         invoice = params.get("invoice")
         amount = params.get("amount", None)
 
-        invoice_msat = plugin.rpc.decodepay(
-            bolt11=invoice).get("amount_msat", 0)
+        invoice_msat = plugin.rpc.decodepay(bolt11=invoice).get("amount_msat", 0)
 
         if amount and invoice_msat:
-            raise NWCError(ErrorCodes.OTHER,
-                           "amount and invoice amount cannot both be specified")
+            raise NWCError(
+                ErrorCodes.OTHER, "amount and invoice amount cannot both be specified"
+            )
 
-        if self.connection.budget_msat and self.connection.remaining_budget < invoice_msat:
-            plugin.log(
-                f"nwc quota exceded for {self.connection.pubkey}", 'info')
+        if (
+            self.connection.budget_msat
+            and self.connection.remaining_budget < invoice_msat
+        ):
+            plugin.log(f"nwc quota exceded for {self.connection.pubkey}", "info")
             raise QuotaExceededError()
 
         pay_result = plugin.rpc.pay(bolt11=invoice, amount_msat=amount)
 
-        plugin.log(f"nwc pay result: {pay_result}", 'debug')
+        plugin.log(f"nwc pay result: {pay_result}", "debug")
 
         return self.handle_pay_result(pay_result)
 
@@ -370,14 +364,11 @@ class NIP47RequestHandler:
 
         if preimage:
             # pretty sure cln doesn't support specifying preimage
-            raise NWCError(ErrorCodes.NOT_IMPLEMENTED,
-                           "preimage not supported")
+            raise NWCError(ErrorCodes.NOT_IMPLEMENTED, "preimage not supported")
         if tlv_records:
-            raise NWCError(ErrorCodes.NOT_IMPLEMENTED,
-                           "tlv records not supported")
+            raise NWCError(ErrorCodes.NOT_IMPLEMENTED, "tlv records not supported")
 
-        pay_result = plugin.rpc.keysend(destination=pubkey,
-                                        amount_msat=amount_msat)
+        pay_result = plugin.rpc.keysend(destination=pubkey, amount_msat=amount_msat)
 
         return self.handle_pay_result(pay_result)
 
@@ -387,21 +378,26 @@ class NIP47RequestHandler:
         # description_hash = params.get("description_hash", None)
         expiry = params.get("expiry", None)
         invoice = plugin.rpc.invoice(
-            amount_msat=amount_msat, label=f"nwc-invoice:{uuid.uuid4()}", description=description, expiry=expiry)
+            amount_msat=amount_msat,
+            label=f"nwc-invoice:{uuid.uuid4()}",
+            description=description,
+            expiry=expiry,
+        )
         return {
             "type": "incoming",
             "invoice": invoice.get("bolt11"),
             "amount": amount_msat,
             "created_at": int(time.time()),
             "expires_at": invoice.get("expires_at"),
-            "payment_hash": invoice.get("payment_hash")
+            "payment_hash": invoice.get("payment_hash"),
         }
 
     async def _get_balance(self, params):
         peer_channels = plugin.rpc.listpeerchannels()["channels"]
 
-        node_balance = sum([Millisatoshi(channel.get("spendable_msat"))
-                           for channel in peer_channels])
+        node_balance = sum(
+            [Millisatoshi(channel.get("spendable_msat")) for channel in peer_channels]
+        )
 
         return {
             "balance": int(node_balance),
@@ -412,16 +408,17 @@ class NIP47RequestHandler:
         invoice = params.get("invoice")
 
         if invoice and payment_hash:
-            raise NWCError(ErrorCodes.OTHER,
-                           "payment_hash and invoice cannot both be specified")
+            raise NWCError(
+                ErrorCodes.OTHER, "payment_hash and invoice cannot both be specified"
+            )
 
         pays = []
         invoices = []
         if payment_hash:
-            invoices = plugin.rpc.listinvoices(
-                payment_hash=payment_hash).get("invoices", None)
-            pays = plugin.rpc.listpays(
-                payment_hash=payment_hash).get("pays", None)
+            invoices = plugin.rpc.listinvoices(payment_hash=payment_hash).get(
+                "invoices", None
+            )
+            pays = plugin.rpc.listpays(payment_hash=payment_hash).get("pays", None)
         if invoice:
             invoices = plugin.rpc.listinvoices(invstring=invoice).get("invoices", None)
             pays = plugin.rpc.listpays(bolt11=invoice).get("pays", None)
@@ -450,8 +447,10 @@ class NIP47RequestHandler:
             }
         else:
             fees_paid = 0
-            if ( int(payment.get("amount_sent_msat")) and int(payment.get("amount_msat")) ):
-                fees_paid = int(payment.get("amount_sent_msat")) - int(payment.get("amount_msat"))
+            if int(payment.get("amount_sent_msat")) and int(payment.get("amount_msat")):
+                fees_paid = int(payment.get("amount_sent_msat")) - int(
+                    payment.get("amount_msat")
+                )
             decoded = plugin.rpc.decode(payment.get("bolt11"))
             description_hash = decoded.get("description_hash")
             expires_at = payment.get("created_at") + decoded.get("expiry")
@@ -475,7 +474,7 @@ class NIP47RequestHandler:
         include_unpaid = False
         include_incoming = True
         include_outgoing = True
-        if "unpaid" in params and params.get("unpaid") == True:
+        if "unpaid" in params and params.get("unpaid") is True:
             include_unpaid = True
         if "type" in params and params.get("type") == "incoming":
             include_outgoing = False
@@ -484,90 +483,109 @@ class NIP47RequestHandler:
         if include_incoming:
             all_invoices = plugin.rpc.listinvoices().get("invoices", [])
             for tx in all_invoices:
-                if not tx.get("bolt11"): continue
-                if not ( ( include_unpaid and tx.get("status") == "unpaid" ) or tx.get("status") == "paid" ): continue
+                if not tx.get("bolt11"):
+                    continue
+                if not (
+                    (include_unpaid and tx.get("status") == "unpaid")
+                    or tx.get("status") == "paid"
+                ):
+                    continue
                 decoded = plugin.rpc.decode(tx.get("bolt11"))
                 created_at = decoded.get("created_at")
                 description_hash = decoded.get("description_hash")
                 amount = int(tx.get("amount_received_msat"))
-                txs.append({
-                    "type": "incoming",
-                    "invoice": tx.get("bolt11"),
-                    "description": tx.get("description"),
-                    "description_hash": description_hash,
-                    "preimage": tx.get("payment_preimage", None),
-                    "payment_hash": tx.get("payment_hash"),
-                    "amount": amount,
-                    "fees_paid": 0,
-                    "created_at": created_at,
-                    "expires_at": tx.get("expires_at"),
-                    "settled_at": tx.get("paid_at"),
-                })
+                txs.append(
+                    {
+                        "type": "incoming",
+                        "invoice": tx.get("bolt11"),
+                        "description": tx.get("description"),
+                        "description_hash": description_hash,
+                        "preimage": tx.get("payment_preimage", None),
+                        "payment_hash": tx.get("payment_hash"),
+                        "amount": amount,
+                        "fees_paid": 0,
+                        "created_at": created_at,
+                        "expires_at": tx.get("expires_at"),
+                        "settled_at": tx.get("paid_at"),
+                    }
+                )
         if include_outgoing:
             all_payments = plugin.rpc.listpays().get("pays", [])
             for tx in all_payments:
-                if not tx.get("bolt11"): continue
-                if not ( ( include_unpaid and tx.get("status") != "complete" ) or tx.get("status") == "complete" ): continue
+                if not tx.get("bolt11"):
+                    continue
+                if not (
+                    (include_unpaid and tx.get("status") != "complete")
+                    or tx.get("status") == "complete"
+                ):
+                    continue
                 fees_paid = 0
-                if ( int(tx.get("amount_sent_msat")) and int(tx.get("amount_msat")) ):
-                    fees_paid = int(tx.get("amount_sent_msat")) - int(tx.get("amount_msat"))
+                if int(tx.get("amount_sent_msat")) and int(tx.get("amount_msat")):
+                    fees_paid = int(tx.get("amount_sent_msat")) - int(
+                        tx.get("amount_msat")
+                    )
                 decoded = plugin.rpc.decode(tx.get("bolt11"))
                 description_hash = decoded.get("description_hash")
                 expires_at = tx.get("created_at") + decoded.get("expiry")
                 amount = int(tx.get("amount_msat"))
-                txs.append({
-                    "type": "outgoing",
-                    "invoice": tx.get("bolt11"),
-                    "description": tx.get("description"),
-                    "description_hash": description_hash,
-                    "preimage": tx.get("preimage", None),
-                    "payment_hash": tx.get("payment_hash"),
-                    "amount": amount,
-                    "fees_paid": fees_paid,
-                    "created_at": tx.get("created_at"),
-                    "expires_at": expires_at,
-                    "settled_at": tx.get("completed_at"),
-                })
+                txs.append(
+                    {
+                        "type": "outgoing",
+                        "invoice": tx.get("bolt11"),
+                        "description": tx.get("description"),
+                        "description_hash": description_hash,
+                        "preimage": tx.get("preimage", None),
+                        "payment_hash": tx.get("payment_hash"),
+                        "amount": amount,
+                        "fees_paid": fees_paid,
+                        "created_at": tx.get("created_at"),
+                        "expires_at": expires_at,
+                        "settled_at": tx.get("completed_at"),
+                    }
+                )
         txs.sort(key=lambda x: x["created_at"], reverse=True)
-        if "from" in params and params[ "from" ]:
+        if "from" in params and params["from"]:
             new_txs = []
             for item in txs:
                 if item["created_at"] >= params.get("from"):
-                    new_txs.append( item )
-            txs = json.loads( json.dumps( new_txs ) )
-        if "until" in params and params[ "until" ]:
+                    new_txs.append(item)
+            txs = json.loads(json.dumps(new_txs))
+        if "until" in params and params["until"]:
             new_txs = []
             for item in txs:
                 if item["created_at"] <= params.get("until"):
-                    new_txs.append( item )
-            txs = json.loads( json.dumps( new_txs ) )
-        if "offset" in params and params[ "offset" ]:
+                    new_txs.append(item)
+            txs = json.loads(json.dumps(new_txs))
+        if "offset" in params and params["offset"]:
             new_txs = []
             for index, item in enumerate(txs):
                 if index >= params.get("offset"):
-                    new_txs.append( item )
-            txs = json.loads( json.dumps( new_txs ) )
-        if "limit" in params and params[ "limit" ]:
+                    new_txs.append(item)
+            txs = json.loads(json.dumps(new_txs))
+        if "limit" in params and params["limit"]:
             new_txs = []
             for item in txs:
                 if len(new_txs) < params.get("limit"):
-                    new_txs.append( item )
-            txs = json.loads( json.dumps( new_txs ) )
+                    new_txs.append(item)
+            txs = json.loads(json.dumps(new_txs))
 
-        return {
-            "transactions": txs
-        }
+        return {"transactions": txs}
 
     def add_to_spent(self, amount_sent_msat):
         key = self.connection.datastore_key
-        new_amount = self.connection.spent_msat + \
-            Millisatoshi(amount_sent_msat)
-        plugin.rpc.datastore(key=key, string=json.dumps({
-            "secret": self.connection.secret,
-            "budget_msat": self.connection.budget_msat,
-            "expiry_unix": self.connection.expiry_unix,
-            "spent_msat": new_amount
-        }), mode="must-replace")
+        new_amount = self.connection.spent_msat + Millisatoshi(amount_sent_msat)
+        plugin.rpc.datastore(
+            key=key,
+            string=json.dumps(
+                {
+                    "secret": self.connection.secret,
+                    "budget_msat": self.connection.budget_msat,
+                    "expiry_unix": self.connection.expiry_unix,
+                    "spent_msat": new_amount,
+                }
+            ),
+            mode="must-replace",
+        )
 
 
 class NIP47Request(Event):
@@ -584,20 +602,20 @@ class NIP47Request(Event):
             content=event._content,
             tags=event._tags,
             pubkey=event._pubkey,
-            created_at=event._created_at
+            created_at=event._created_at,
         )
 
     @staticmethod
     def from_JSON(evt_json):
         # Create an Event instance from JSON
         event = Event(
-            id=evt_json['id'],
-            sig=evt_json['sig'],
-            kind=evt_json['kind'],
-            content=evt_json['content'],
-            tags=evt_json['tags'],
-            pubkey=evt_json['pubkey'],
-            created_at=evt_json['created_at']
+            id=evt_json["id"],
+            sig=evt_json["sig"],
+            kind=evt_json["kind"],
+            content=evt_json["content"],
+            tags=evt_json["tags"],
+            pubkey=evt_json["pubkey"],
+            created_at=evt_json["created_at"],
         )
 
         # Return a new NIP47Request instance
@@ -608,7 +626,7 @@ class NIP47Request(Event):
             request_payload = json.loads(self.decrypt_content(dh_privkey_hex))
             method = request_payload.get("method", None)
 
-            plugin.log(f"nwc request received: {request_payload}", 'debug')
+            plugin.log(f"nwc request received: {request_payload}", "debug")
 
             connection = NIP47URI.find_unique(pubkey=self._pubkey)
 
@@ -616,65 +634,62 @@ class NIP47Request(Event):
                 raise UnauthorizedError()
 
             request_handler = NIP47RequestHandler(
-                connection=connection, request=request_payload)
+                connection=connection, request=request_payload
+            )
 
             if not request_handler.handler:
                 raise NotImplementedError()
 
-            execution_result = await request_handler.execute(request_payload.get("params"))
+            execution_result = await request_handler.execute(
+                request_payload.get("params")
+            )
 
             return self.success_response(result_type=method, result=execution_result)
 
         except NWCError as e:
-            plugin.log(f"NWC ERROR: {e}", 'debug')
-            return self.error_response(result_type=method, code=e.code, message=e.message)
+            plugin.log(f"NWC ERROR: {e}", "debug")
+            return self.error_response(
+                result_type=method, code=e.code, message=e.message
+            )
 
         except RpcError as e:
-            plugin.log(f"RPC ERROR: {e}", 'error')
+            plugin.log(f"RPC ERROR: {e}", "error")
             message = e.error.get("message", None)
             return self.error_response(
-                result_type=method, code=ErrorCodes.INTERNAL, message=message)
+                result_type=method, code=ErrorCodes.INTERNAL, message=message
+            )
 
         except json.JSONDecodeError as e:
-            return self.error_response(result_type=method, code=ErrorCodes.OTHER, message=str(e.msg))
+            return self.error_response(
+                result_type=method, code=ErrorCodes.OTHER, message=str(e.msg)
+            )
 
         except Exception as e:
-            plugin.log(f"ERROR: {e}", 'error')
+            plugin.log(f"ERROR: {e}", "error")
             return self.error_response(result_type=method, code=ErrorCodes.INTERNAL)
 
     def success_response(self, result_type, result):
         """Formats a successful response."""
-        return {
-            "result_type": result_type,
-            "result": result,
-            "error": None
-        }
+        return {"result_type": result_type, "result": result, "error": None}
 
     def error_response(self, result_type, code: ErrorCodes, message=""):
         """Formats an error response."""
         return {
             "result_type": result_type,
             "result": None,
-            "error": {
-                "code": code.value,
-                "message": message
-            }
+            "error": {"code": code.value, "message": message},
         }
 
     def decrypt_content(self, dh_privkey_hex: str):
         """Use nip04 to decrypt the event content"""
         return nip04.decrypt(
-            secret_key=dh_privkey_hex,
-            pubkey_hex=self._pubkey,
-            data=self._content
+            secret_key=dh_privkey_hex, pubkey_hex=self._pubkey, data=self._content
         )
 
 
 class InfoEvent(Event):
-    def __init__(self, supported_methods: list[str]):
+    def __init__(self, supported_methods: List[str]):
         # create kind 23195 (nwc response) event with encrypted payload
-        content = ' '.join(supported_methods)
+        content = " ".join(supported_methods)
 
-        super().__init__(
-            content=content,
-            kind=13194)
+        super().__init__(content=content, kind=13194)
