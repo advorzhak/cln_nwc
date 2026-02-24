@@ -1,0 +1,25 @@
+name: main on CLN v24.11
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "Dockerfile"
+      - "*.md"
+      - "LICENSE"
+      - ".gitignore"
+      - "flake.nix"
+      - "flake.lock"
+      - "*.sh"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call-ci:
+    uses: ./.github/workflows/ci.yml
+    with:
+      cln-version: "v24.11"
+      pyln-version: "24.11"
+      node-version: "20"
+      tagged-release: false
