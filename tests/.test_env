@@ -1,0 +1,4 @@
+# Test environment variables
+# These are loaded before the plugin starts to configure it for testing
+export TEST_RELAY=1
+export PYTHONUNBUFFERED=1

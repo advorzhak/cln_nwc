@@ -5,3 +5,31 @@
 __pycache__
 result
 tests/node_modules
+
+# Pre-commit cache
+.pre-commit-framework
+
+# Python development
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cln_nwc"
+version = "0.1.0"
+description = "Nostr Wallet Connect plugin for Core Lightning"
+readme = "README.md"
+license = {"text" = "MIT"}
+requires-python = ">=3.8,<4"
+authors = [
+    {name = "Alby", email = "contact@getalby.com"}
+]
+
+dependencies = [
+    "pyln-client",
+    "coincurve",
+    "cryptography",
+    "websockets",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"
+
+[tool.python]
+version = ">=3.8"

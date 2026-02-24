@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest --config jest.config.js --runInBand"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +13,7 @@
     "jest": "^29.7.0"
   },
   "dependencies": {
-    "@getalby/sdk": "^3.3.1"
+    "@getalby/sdk": "^3.3.1",
+    "ws": "^8.14.0"
   }
 }

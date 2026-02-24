@@ -2,10 +2,15 @@
 Defines classes for handling events
 """
 
+from __future__ import annotations
+
 import hashlib
-import time
 import json
+import time
+from typing import Optional
+
 from coincurve import PrivateKey
+
 from .utils import get_hex_pubkey
 
 # copied EventTags exactly from
@@ -14,7 +19,7 @@ from .utils import get_hex_pubkey
 
 class EventTags:
     """
-        split out so we can use event tags without have to create the whole event
+    split out so we can use event tags without have to create the whole event
     """
 
     def __init__(self, tags):
@@ -49,21 +54,22 @@ class EventTags:
 
     def get_tags_value(self, tag_name: str) -> []:
         """
-        returns [] containing the 1st value field for a given tag, in many cases this is all we want
-        if not use get_tags
-        :param tag_name:
-        :return:
+        Returns list of 1st value field for a given tag.
+        In many cases this is all you need; else use get_tags.
+        :param tag_name: Tag name to get values for
+        :return: List of tag values
         """
         return [t[0] for t in self.get_tags(tag_name)]
 
-    def get_tag_value_pos(self, tag_name: str, pos: int = 0,
-                          default: str = None) -> str:
+    def get_tag_value_pos(
+        self, tag_name: str, pos: int = 0, default: Optional[str] = None
+    ) -> Optional[str]:
         """
-            returns tag value (first el after tag name) for given tag_name at pos,
-            if there isn't a tag at that pos then default is returned
+        returns tag value (first el after tag name) for given tag_name at pos,
+        if there isn't a tag at that pos then default is returned
 
-            e.g. we only want very first d tags value else ''
-                get_tag_value_pos('d', default='')
+        e.g. we only want very first d tags value else ''
+            get_tag_value_pos('d', default='')
 
         """
         ret = default
@@ -80,16 +86,16 @@ class EventTags:
     @property
     def e_tags(self):
         """
-        :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
+        :return: All referenced events/#e tags where event id is 64 chars
         """
-        return [t[0] for t in self.get_tags('e') if len(t[0]) == 64]
+        return [t[0] for t in self.get_tags("e") if len(t[0]) == 64]
 
     @property
     def p_tags(self):
         """
-        :return: all ref'd profile/#p tag in [pub_k, pub_k,...] makes sure pub_k is correct len
+        :return: All referenced profiles/#p tags where pubkey is 64 chars
         """
-        return [t[0] for t in self.get_tags('p') if len(t[0]) == 64]
+        return [t[0] for t in self.get_tags("p") if len(t[0]) == 64]
 
     def __str__(self):
         return json.dumps(self._tags)
@@ -104,6 +110,7 @@ class EventTags:
         for c_tag in self._tags:
             yield c_tag
 
+
 # copied some + adapted to use coincurve from
 # https://github.com/monty888/monstr/blob/cb728f1710dc47c8289ab0994f15c24e844cebc4/src/monstr/event/event.py
 
@@ -112,24 +119,32 @@ class Event:
     @staticmethod
     def from_JSON(evt_json):
         """
-        TODO: add option to verify sig/eror if invalid?
-        creates an event object from json - at the moment this must be a full event, has id and has been signed,
-        may add option for presigned event in future
-        :param evt_json: json to create the event, as you'd recieve from subscription
-        :return:
+        Create Event from JSON dict. Event must be full & signed.
+        TODO: Add option to verify signature or ignore if invalid.
+        TODO: Add option for presigned event in future.
+        :param evt_json: JSON dict from subscription
+        :return: Event instance
         """
         return Event(
-            id=evt_json['id'],
-            sig=evt_json['sig'],
-            kind=evt_json['kind'],
-            content=evt_json['content'],
-            tags=evt_json['tags'],
-            pubkey=evt_json['pubkey'],
-            created_at=evt_json['created_at']
+            id=evt_json["id"],
+            sig=evt_json["sig"],
+            kind=evt_json["kind"],
+            content=evt_json["content"],
+            tags=evt_json["tags"],
+            pubkey=evt_json["pubkey"],
+            created_at=evt_json["created_at"],
         )
 
-    def __init__(self, id=None, sig=None, kind=None, content=None,
-                 tags=None, pubkey=None, created_at=None):
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        sig: Optional[str] = None,
+        kind: Optional[int] = None,
+        content: Optional[str] = None,
+        tags: Optional[list] = None,
+        pubkey: Optional[str] = None,
+        created_at: Optional[int] = None,
+    ):
         self._id = id
         self._sig = sig
         self._kind = kind
@@ -147,30 +162,33 @@ class Event:
 
     def serialize(self):
         """
-            see https://github.com/fiatjaf/nostr/blob/master/nips/01.md
+        see https://github.com/fiatjaf/nostr/blob/master/nips/01.md
         """
         if self._pubkey is None:
-            raise Exception(
-                'Event::serialize can\'t be done unless pub key is set')
+            raise Exception("Event::serialize can't be done unless pub key is set")
 
-        ret = json.dumps([
-            0,
-            self._pubkey,
-            self._created_at,
-            self._kind,
-            self._tags.tags,
-            self._content
-        ], separators=(',', ':'), ensure_ascii=False)
+        ret = json.dumps(
+            [
+                0,
+                self._pubkey,
+                self._created_at,
+                self._kind,
+                self._tags.tags,
+                self._content,
+            ],
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
 
         return ret
 
     def _get_id(self):
         """
-            see https://github.com/fiatjaf/nostr/blob/master/nips/01.md
-            pub key must be set to generate the id
+        see https://github.com/fiatjaf/nostr/blob/master/nips/01.md
+        pub key must be set to generate the id
         """
         evt_str = self.serialize()
-        self._id = hashlib.sha256(evt_str.encode('utf-8')).hexdigest()
+        self._id = hashlib.sha256(evt_str.encode("utf-8")).hexdigest()
 
     def sign(self, privkey: str):
         """
@@ -183,7 +201,7 @@ class Event:
 
         pk = PrivateKey(bytes.fromhex(privkey))
 
-        id_bytes = (bytes(bytearray.fromhex(self._id)))
+        id_bytes = bytes(bytearray.fromhex(self._id))
         sig = pk.sign_schnorr(message=id_bytes, aux_randomness=None)
         sig_hex = sig.hex()
 
@@ -191,11 +209,11 @@ class Event:
 
     def event_data(self):
         return {
-            'id': self._id,
-            'pubkey': self._pubkey,
-            'created_at': self._created_at,
-            'kind': self._kind,
-            'tags': self._tags.tags,
-            'content': self._content,
-            'sig': self._sig
+            "id": self._id,
+            "pubkey": self._pubkey,
+            "created_at": self._created_at,
+            "kind": self._kind,
+            "tags": self._tags.tags,
+            "content": self._content,
+            "sig": self._sig,
         }

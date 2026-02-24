@@ -1,8 +1,12 @@
 """utility functions"""
 
+from __future__ import annotations
+
+import os
+from typing import Tuple
+
 from coincurve import PublicKey
 from pyln.client import Plugin
-import os
 
 
 def get_hex_pubkey(privkey: str):
@@ -10,13 +14,12 @@ def get_hex_pubkey(privkey: str):
     Compute the x-only public key from a private key
     """
     privkey_bytes = bytes.fromhex(privkey)
-    compressed_hex_pubkey = PublicKey.from_secret(
-        privkey_bytes).format().hex()
+    compressed_hex_pubkey = PublicKey.from_secret(privkey_bytes).format().hex()
     x_only_hex_pubkey = compressed_hex_pubkey[2:]
     return x_only_hex_pubkey
 
 
-def generate_keypair(plugin: Plugin) -> tuple[bytes, bytes]:
+def generate_keypair(plugin: Plugin) -> Tuple[bytes, bytes]:
     """
     Use the node's hsm secret to generate a keypair
 
@@ -47,7 +50,7 @@ def get_keypair(plugin: Plugin):
     privkey = None
     pubkey = None
 
-    if len(datastore) is not 0:
+    if len(datastore) != 0:
         privkey = bytes.fromhex(datastore[0]["string"])
         pubkey = PublicKey.from_secret(privkey).format()[1:]
 

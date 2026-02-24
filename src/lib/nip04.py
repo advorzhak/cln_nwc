@@ -1,8 +1,11 @@
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
+from __future__ import annotations
+
 import base64
 import os
+
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 # NIP04 spec: https://github.com/nostr-protocol/nips/blob/master/04.md
 
@@ -22,11 +25,10 @@ def get_ecdh_key(secret_key: str, pubkey_hex: str):
     bytes: The shared secret derived from the ECDH key exchange.
     """
 
-    pubkey_bytes = bytes.fromhex('02' + pubkey_hex)
+    pubkey_bytes = bytes.fromhex("02" + pubkey_hex)
 
     # convert pubkey to ec EllipticCurvePublicKey instance
-    ec_key = ec.EllipticCurvePublicKey.from_encoded_point(
-        ec.SECP256K1(), pubkey_bytes)
+    ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pubkey_bytes)
 
     # convert secret to ec EllipticCurvePrivateKey instance
     sk = ec.derive_private_key(int(secret_key, 16), ec.SECP256K1())
@@ -52,13 +54,13 @@ def process_aes(data: bytes, key: bytes, iv: bytes, mode: str) -> bytes:
     """
 
     cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-    if mode == 'encrypt':
+    if mode == "encrypt":
         processor = cipher.encryptor()
-    elif mode == 'decrypt':
+    elif mode == "decrypt":
         processor = cipher.decryptor()
 
     result = processor.update(data) + processor.finalize()
-    if mode == 'decrypt':
+    if mode == "decrypt":
         unpadder = padding.PKCS7(128).unpadder()
         result = unpadder.update(result) + unpadder.finalize()
 
@@ -88,11 +90,14 @@ def encrypt(secret_key: str, pubkey_hex: str, data: str) -> str:
     padded_data = padder.update(data.encode()) + padder.finalize()
 
     # encrypt using AES-256-CBC
-    encrypted_data = process_aes(padded_data, shared_key, iv, 'encrypt')
+    encrypted_data = process_aes(padded_data, shared_key, iv, "encrypt")
 
     # return as base 65 string
-    return base64.b64encode(encrypted_data).decode() + \
-        '?iv=' + base64.b64encode(iv).decode()
+    return (
+        base64.b64encode(encrypted_data).decode()
+        + "?iv="
+        + base64.b64encode(iv).decode()
+    )
 
 
 def decrypt(secret_key: str, pubkey_hex: str, data: str) -> str:
@@ -111,15 +116,16 @@ def decrypt(secret_key: str, pubkey_hex: str, data: str) -> str:
     shared_key = get_ecdh_key(secret_key, pubkey_hex)
 
     # split the data into encrypted data and IV then decode
-    encrypted_message_b64, iv_b64 = data.split('?iv=')
+    encrypted_message_b64, iv_b64 = data.split("?iv=")
     encrypted_message = base64.b64decode(encrypted_message_b64)
     iv = base64.b64decode(iv_b64)
 
     # decrypt using AES-256-CBC
-    decrypted_data = process_aes(encrypted_message, shared_key, iv, 'decrypt')
+    decrypted_data = process_aes(encrypted_message, shared_key, iv, "decrypt")
 
     # return as  string
-    return decrypted_data.decode('utf-8')
+    return decrypted_data.decode("utf-8")
+
 
 # # TEST
 

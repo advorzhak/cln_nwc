@@ -4,10 +4,10 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
+    { self
+    , nixpkgs
+    , flake-utils
+    ,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -132,21 +132,21 @@
 
             (python3.withPackages (
               ps:
-              with ps;
-              with python3Packages;
-              [
-                ipython
-                pip
-                base58
-                bitstring
-                pysocks
-                cryptography
-                coincurve
-                websockets
-                jupyter
-                pylint
-                autopep8
-              ]
+                with ps;
+                with python3Packages;
+                [
+                  ipython
+                  pip
+                  base58
+                  bitstring
+                  pysocks
+                  cryptography
+                  coincurve
+                  websockets
+                  jupyter
+                  pylint
+                  autopep8
+                ]
             ))
           ];
           # Automatically run jupyter when entering the shell.
